@@ -8,18 +8,23 @@ fn getDeterminant(matrix: &TwoByTwoMatrix) -> f32 {
     let a = matrix[0][0];
     let b = matrix[0][1];
     let c = matrix[1][0];
-    let d = matrix[0][1];
+    let d = matrix[1][1];
 
     (a * d) - (b * c)
 }
 
 fn invert(matrix: &TwoByTwoMatrix) -> TwoByTwoMatrix {
     let determinant: f32 = getDeterminant(&matrix);
+
+    if determinant == 0f32 {
+        panic!("Cannot invert matrix with determinant of 0")
+    }
+
     let negOne = -1f32;
 
     let negatedForm: TwoByTwoMatrix = [
-        [matrix[1][1], negOne * matrix[1][0]],
-        [negOne * matrix[1][1], matrix[1][0]],
+        [matrix[1][1], negOne * matrix[0][1]],
+        [negOne * matrix[1][0], matrix[0][0]],
     ];
 
     let inverted = multiply_matrix_by_scalar(&negatedForm, 1f32 / determinant);
@@ -40,9 +45,9 @@ fn multiply_matrix_by_scalar(matrix: &TwoByTwoMatrix, scalar: f32) -> TwoByTwoMa
     let mut outputVecTwo: Vec<f32> = Vec::with_capacity(2);
 
     outputVecOne.push(matrix[0][0] * scalar);
-    outputVecTwo.push(matrix[0][1] * scalar);
-    outputVecOne.push(matrix[1][0] * scalar);
-    outputVecOne.push(matrix[1][1] * scalar);
+    outputVecOne.push(matrix[0][1] * scalar);
+    outputVecTwo.push(matrix[1][0] * scalar);
+    outputVecTwo.push(matrix[1][1] * scalar);
 
     return [
         [outputVecOne[0], outputVecOne[1]],
