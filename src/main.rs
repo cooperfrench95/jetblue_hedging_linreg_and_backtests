@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use csv;
 use serde::Deserialize;
 
@@ -174,7 +176,7 @@ fn multiply_matrix_by_matrix(
 
     // Construct output vec data structure first
     let mut outputMatrix: Vec<Vec<f32>> = Vec::with_capacity(outputLength);
-    for rowNum in 0..outputLength {
+    for _rowNum in 0..outputLength {
         let rowVector: Vec<f32> = Vec::with_capacity(columnLength);
         outputMatrix.push(rowVector);
     }
@@ -251,4 +253,30 @@ fn main() {
         Some(f) => f,
         None => panic!("Missing beta coefficient"),
     };
+
+    let mut sum: f32 = 0.0;
+    for price in baselineData.iter() {
+        sum += price;
+    }
+    let averageBaselinePrice = sum / baselineData.len() as f32;
+
+    // Reuse sum for next loop
+    sum = 0.0;
+    for price in baselineData.iter() {
+        sum += (price - averageBaselinePrice).powi(2);
+    }
+    let totalVariance = sum;
+
+    // One final time
+    sum = 0.0;
+    for (index, [_placeholder, price]) in priceData.iter().enumerate() {
+        let predictedPrice = (price * beta) + alpha;
+        let actualPrice = baselineData.get(index).expect("Missing price data");
+        sum += (actualPrice - predictedPrice).powi(2);
+    }
+    let residualVariance = sum;
+
+    let rSquared = 1.0 - (residualVariance / totalVariance);
+
+    println!("R^2 = {rSquared}, Intercept = {alpha}, MVHR = {beta}");
 }
