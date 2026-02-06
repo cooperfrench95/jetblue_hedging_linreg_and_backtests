@@ -1,8 +1,19 @@
-use std;
+use csv;
+use serde::Deserialize;
+use std::{self, collections::HashMap};
+
+#[derive(Debug, Deserialize)]
+struct CSVEntry {
+    price: f32,
+}
 
 type SimpleVector = [f32; 2];
 
 type TwoByTwoMatrix = [SimpleVector; 2];
+
+type ArbitrarySizeMatrix = Vec<Vec<f32>>;
+
+type PriceDataMatrix = Vec<SimpleVector>;
 
 fn getDeterminant(matrix: &TwoByTwoMatrix) -> f32 {
     let a = matrix[0][0];
@@ -11,6 +22,87 @@ fn getDeterminant(matrix: &TwoByTwoMatrix) -> f32 {
     let d = matrix[1][1];
 
     (a * d) - (b * c)
+}
+
+fn dot_product(row: &Vec<f32>, col: &Vec<f32>) -> f32 {
+    if row.iter().len() != col.iter().len() {
+        panic!("Row and cols must be same length to calculate dot product")
+    }
+
+    let mut sum: f32 = 0f32;
+    for (rowIdx, rowValue) in row.iter().enumerate() {
+        for (colIdx, colValue) in col.iter().enumerate() {
+            if colIdx == rowIdx {
+                sum += rowValue * colValue;
+                break;
+            }
+        }
+    }
+
+    return sum;
+}
+
+// Price data vector will be like
+// [
+//  [1, 12],
+//  [1, 13],
+//  [1, 14]
+// ]
+
+// Transposed
+// [
+//   [1, 1, 1],
+//   [12, 13, 14]
+// ]
+
+fn transpose(matrix: &PriceDataMatrix) -> ArbitrarySizeMatrix {
+    let mut internalVecOne: Vec<f32> = Vec::with_capacity(matrix.len());
+    let mut internalVecTwo: Vec<f32> = Vec::with_capacity(matrix.len());
+    let mut transposed = Vec::with_capacity(2);
+
+    for vector in matrix.iter() {
+        internalVecOne.push(vector[0]);
+        internalVecTwo.push(vector[1]);
+    }
+
+    transposed.push(internalVecOne);
+    transposed.push(internalVecTwo);
+
+    return transposed;
+}
+
+fn get_gram_matrix(matrix: &PriceDataMatrix) -> TwoByTwoMatrix {
+    let mut transposed = transpose(matrix);
+    let mut originalMatrixAsVec = Vec::with_capacity(matrix.len());
+
+    for vector in matrix.iter() {
+        let mut reconstructedVec = Vec::new();
+        reconstructedVec.push(vector[0]);
+        reconstructedVec.push(vector[1]);
+        originalMatrixAsVec.push(reconstructedVec);
+    }
+
+    let asVectorMatrix = multiply_matrix_by_matrix(&transposed, &originalMatrixAsVec);
+
+    fn safe_get(firstIndex: usize, secondIndex: usize, vm: &ArbitrarySizeMatrix) -> f32 {
+        let val = vm
+            .get(firstIndex)
+            .expect("Missing A position in gram matrix")
+            .get(secondIndex)
+            .expect("Missing A position in gram matrix");
+        return *val;
+    }
+
+    return [
+        [
+            safe_get(0, 0, &asVectorMatrix),
+            safe_get(0, 1, &asVectorMatrix),
+        ],
+        [
+            safe_get(1, 0, &asVectorMatrix),
+            safe_get(1, 1, &asVectorMatrix),
+        ],
+    ];
 }
 
 fn invert(matrix: &TwoByTwoMatrix) -> TwoByTwoMatrix {
@@ -56,17 +148,59 @@ fn multiply_matrix_by_scalar(matrix: &TwoByTwoMatrix, scalar: f32) -> TwoByTwoMa
 }
 
 fn multiply_matrix_by_matrix(
-    matrixOne: &TwoByTwoMatrix,
-    matrixTwo: &TwoByTwoMatrix,
-) -> TwoByTwoMatrix {
-    let a = (matrixOne[0][0] * matrixTwo[0][0]) + (matrixOne[0][1] * matrixTwo[1][0]);
-    let b = (matrixOne[0][0] * matrixTwo[0][1]) + (matrixOne[0][1] * matrixTwo[1][1]);
-    let c = (matrixOne[1][0] * matrixTwo[0][0]) + (matrixOne[1][1] * matrixTwo[1][0]);
-    let d = (matrixOne[1][0] * matrixTwo[0][1]) + (matrixOne[1][1] * matrixTwo[1][1]);
+    matrixOne: &Vec<Vec<f32>>,
+    matrixTwo: &Vec<Vec<f32>>,
+) -> ArbitrarySizeMatrix {
+    let outputLength = matrixOne.len();
+    let rowLength = matrixTwo[0].len();
+    let columnLength = matrixTwo.len();
+    if rowLength != outputLength {
+        panic!("Cannot multiply matrices with incompatible sizes")
+    }
 
-    return [[a, b], [c, d]];
+    // Construct output vec data structure first
+    let mut outputMatrix: Vec<Vec<f32>> = Vec::with_capacity(outputLength);
+    for rowNum in 0..outputLength {
+        let rowVector: Vec<f32> = Vec::with_capacity(columnLength);
+        outputMatrix.push(rowVector);
+    }
+
+    // let correspondingColumnVectorMap = HashMap::new();
+    for rowNum in 0..outputLength {
+        for colNum in 0..columnLength {
+            // Construct the column vector so we can calculate the dot product for the row and col
+            let mut columnVec: Vec<f32> = Vec::with_capacity(columnLength);
+            for entry in matrixTwo.iter() {
+                columnVec.push(entry[colNum])
+            }
+            let dp = dot_product(&matrixOne[rowNum], &columnVec);
+
+            outputMatrix
+                .get_mut(rowNum)
+                .expect("Unexpected output vector length")
+                .push(dp);
+        }
+    }
+
+    return outputMatrix;
+}
+
+fn get_price_data_matrix() -> PriceDataMatrix {
+    let mut reader = match csv::Reader::from_path("data.csv") {
+        Ok(f) => f,
+        Err(e) => panic!("File could not be read"),
+    };
+
+    let mut outputMatrix: PriceDataMatrix = Vec::new();
+
+    for result in reader.deserialize() {
+        let record: CSVEntry = result.expect("Malformed CSV data");
+        outputMatrix.push([1f32, record.price]);
+    }
+
+    return outputMatrix;
 }
 
 fn main() {
-    println!("Hello, world!");
+    let priceData = get_price_data_matrix();
 }
