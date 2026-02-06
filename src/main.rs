@@ -1,6 +1,5 @@
 use csv;
 use serde::Deserialize;
-use std::{self, collections::HashMap};
 
 #[derive(Debug, Deserialize)]
 struct CSVEntry {
@@ -55,6 +54,38 @@ fn dot_product(row: &Vec<f32>, col: &Vec<f32>) -> f32 {
 //   [12, 13, 14]
 // ]
 
+fn safe_get_float(firstIndex: usize, secondIndex: usize, vm: &ArbitrarySizeMatrix) -> f32 {
+    let val = vm
+        .get(firstIndex)
+        .expect("Missing A position in gram matrix")
+        .get(secondIndex)
+        .expect("Missing A position in gram matrix");
+    return *val;
+}
+
+fn to2By2Matrix(input: &ArbitrarySizeMatrix) -> TwoByTwoMatrix {
+    return [
+        [safe_get_float(0, 0, &input), safe_get_float(0, 1, &input)],
+        [safe_get_float(1, 0, &input), safe_get_float(1, 1, &input)],
+    ];
+}
+
+fn from2By2Matrix(input: &TwoByTwoMatrix) -> ArbitrarySizeMatrix {
+    let mut internalVecOne: Vec<f32> = Vec::with_capacity(2);
+    let mut internalVecTwo: Vec<f32> = Vec::with_capacity(2);
+
+    internalVecOne.push(input[0][0]);
+    internalVecOne.push(input[0][1]);
+    internalVecOne.push(input[1][0]);
+    internalVecOne.push(input[1][1]);
+
+    let mut outputVec: Vec<Vec<f32>> = Vec::with_capacity(2);
+    outputVec.push(internalVecOne);
+    outputVec.push(internalVecTwo);
+
+    return outputVec;
+}
+
 fn transpose(matrix: &PriceDataMatrix) -> ArbitrarySizeMatrix {
     let mut internalVecOne: Vec<f32> = Vec::with_capacity(matrix.len());
     let mut internalVecTwo: Vec<f32> = Vec::with_capacity(matrix.len());
@@ -84,25 +115,7 @@ fn get_gram_matrix(matrix: &PriceDataMatrix) -> TwoByTwoMatrix {
 
     let asVectorMatrix = multiply_matrix_by_matrix(&transposed, &originalMatrixAsVec);
 
-    fn safe_get(firstIndex: usize, secondIndex: usize, vm: &ArbitrarySizeMatrix) -> f32 {
-        let val = vm
-            .get(firstIndex)
-            .expect("Missing A position in gram matrix")
-            .get(secondIndex)
-            .expect("Missing A position in gram matrix");
-        return *val;
-    }
-
-    return [
-        [
-            safe_get(0, 0, &asVectorMatrix),
-            safe_get(0, 1, &asVectorMatrix),
-        ],
-        [
-            safe_get(1, 0, &asVectorMatrix),
-            safe_get(1, 1, &asVectorMatrix),
-        ],
-    ];
+    return to2By2Matrix(&asVectorMatrix);
 }
 
 fn invert(matrix: &TwoByTwoMatrix) -> TwoByTwoMatrix {
@@ -123,13 +136,14 @@ fn invert(matrix: &TwoByTwoMatrix) -> TwoByTwoMatrix {
     return inverted;
 }
 
-fn multiply_matrix_by_vector(matrix: &TwoByTwoMatrix, vec: &SimpleVector) -> SimpleVector {
-    let mut outputVec: Vec<f32> = Vec::with_capacity(2);
+fn multiply_matrix_by_vector(matrix: &ArbitrarySizeMatrix, vec: &Vec<f32>) -> Vec<f32> {
+    let mut outputVec: Vec<f32> = Vec::with_capacity(matrix.len());
 
-    outputVec.push((matrix[0][0] * vec[0]) + (matrix[0][1] * vec[1]));
-    outputVec.push((matrix[1][0] * vec[0]) + (matrix[1][1] * vec[1]));
+    for rowNum in 0..matrix.len() {
+        outputVec.push(dot_product(&matrix[rowNum], vec))
+    }
 
-    return [outputVec[0], outputVec[1]];
+    return outputVec;
 }
 
 fn multiply_matrix_by_scalar(matrix: &TwoByTwoMatrix, scalar: f32) -> TwoByTwoMatrix {
@@ -165,7 +179,6 @@ fn multiply_matrix_by_matrix(
         outputMatrix.push(rowVector);
     }
 
-    // let correspondingColumnVectorMap = HashMap::new();
     for rowNum in 0..outputLength {
         for colNum in 0..columnLength {
             // Construct the column vector so we can calculate the dot product for the row and col
@@ -185,8 +198,8 @@ fn multiply_matrix_by_matrix(
     return outputMatrix;
 }
 
-fn get_price_data_matrix() -> PriceDataMatrix {
-    let mut reader = match csv::Reader::from_path("data.csv") {
+fn get_price_data_matrix(fileName: &str) -> PriceDataMatrix {
+    let mut reader = match csv::Reader::from_path(fileName) {
         Ok(f) => f,
         Err(e) => panic!("File could not be read"),
     };
@@ -201,6 +214,41 @@ fn get_price_data_matrix() -> PriceDataMatrix {
     return outputMatrix;
 }
 
+fn get_price_data_vector(fileName: &str) -> Vec<f32> {
+    let mut reader = match csv::Reader::from_path(fileName) {
+        Ok(f) => f,
+        Err(e) => panic!("File could not be read"),
+    };
+
+    let mut outputVec: Vec<f32> = Vec::new();
+
+    for result in reader.deserialize() {
+        let record: CSVEntry = result.expect("Malformed CSV data");
+        outputVec.push(record.price);
+    }
+
+    return outputVec;
+}
+
 fn main() {
-    let priceData = get_price_data_matrix();
+    let priceData = get_price_data_matrix("brent_prices.csv");
+    let baselineData = get_price_data_vector("jet_fuel_prices.csv");
+
+    let gramMatrix = get_gram_matrix(&priceData);
+    let priceDataTranspose = transpose(&priceData);
+    let baselineToPriceCovariance = multiply_matrix_by_vector(&priceDataTranspose, &baselineData);
+    let invertedGramMatrix = invert(&gramMatrix);
+    let coefficients = multiply_matrix_by_vector(
+        &from2By2Matrix(&invertedGramMatrix),
+        &baselineToPriceCovariance,
+    );
+
+    let alpha = match coefficients.get(0) {
+        Some(f) => f,
+        None => panic!("Missing alpha coefficient"),
+    };
+    let beta = match coefficients.get(0) {
+        Some(f) => f,
+        None => panic!("Missing beta coefficient"),
+    };
 }
