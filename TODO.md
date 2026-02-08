@@ -1,6 +1,7 @@
 # Todos
 
 * Further unit test coverage
+* Do a README.md
 
 Back of napkin math here for tests
 
