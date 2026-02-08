@@ -49,23 +49,8 @@ fn getDeterminant(matrix: &TwoByTwoMatrix) -> f64 {
 }
 
 fn dot_product(row: &Vec<f64>, col: &Vec<f64>) -> f64 {
-    if row.iter().len() != col.iter().len() {
-        eprintln!("row {row:?}, col {col:?}");
-        // This should always be true for this application
-        panic!("Row and cols must be same length");
-    }
-
-    let mut sum: f64 = 0f64;
-    for (rowIdx, rowValue) in row.iter().enumerate() {
-        for (colIdx, colValue) in col.iter().enumerate() {
-            if colIdx == rowIdx {
-                sum += rowValue * colValue;
-                break;
-            }
-        }
-    }
-
-    return sum;
+    // "zip" each element together, times each one by its pair, then sum the results
+    return row.iter().zip(col).map(|(a, b)| a * b).sum();
 }
 
 fn safe_get_float(firstIndex: usize, secondIndex: usize, vm: &ArbitrarySizeMatrix) -> f64 {
@@ -77,6 +62,7 @@ fn safe_get_float(firstIndex: usize, secondIndex: usize, vm: &ArbitrarySizeMatri
     return *val;
 }
 
+// Implication is it's already 2x2 and we are just shifting the type here
 fn to2By2Matrix(input: &ArbitrarySizeMatrix) -> TwoByTwoMatrix {
     return [
         [safe_get_float(0, 0, &input), safe_get_float(0, 1, &input)],
@@ -161,17 +147,9 @@ fn multiply_matrix_by_vector(matrix: &ArbitrarySizeMatrix, vec: &Vec<f64>) -> Ve
 }
 
 fn multiply_matrix_by_scalar(matrix: &TwoByTwoMatrix, scalar: f64) -> TwoByTwoMatrix {
-    let mut outputVecOne: Vec<f64> = Vec::with_capacity(2);
-    let mut outputVecTwo: Vec<f64> = Vec::with_capacity(2);
-
-    outputVecOne.push(matrix[0][0] * scalar);
-    outputVecOne.push(matrix[0][1] * scalar);
-    outputVecTwo.push(matrix[1][0] * scalar);
-    outputVecTwo.push(matrix[1][1] * scalar);
-
     return [
-        [outputVecOne[0], outputVecOne[1]],
-        [outputVecTwo[0], outputVecTwo[1]],
+        [matrix[0][0] * scalar, matrix[0][1] * scalar],
+        [matrix[1][0] * scalar, matrix[1][1] * scalar],
     ];
 }
 
