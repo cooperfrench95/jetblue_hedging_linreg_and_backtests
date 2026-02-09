@@ -1,30 +1,14 @@
 #![allow(non_snake_case)]
 
-use clap::Parser;
 use csv;
 use plotters::{
     self,
-    chart::ChartBuilder,
+    chart::{ChartBuilder, SeriesLabelPosition},
     prelude::{BitMapBackend, Circle, IntoDrawingArea, PathElement},
     series::LineSeries,
     style::{self, Color},
 };
 use serde::Deserialize;
-
-#[derive(Parser, Debug)]
-#[command(
-    version = "0.0.1",
-    about = "Linear regression tool implementing the normal equation to analyse cross hedging effectiveness for jet fuel price case study"
-)]
-struct Args {
-    /// The basis asset we're considering for our cross hedge
-    #[arg(short = 'p', long = "prices", default_value = "data/brent.csv")]
-    correlatedAssetPriceChanges: String,
-
-    /// Price data of the underlying
-    #[arg(short = 'u', long = "underlying", default_value = "data/jet_fuel.csv")]
-    underlyingPriceChanges: String,
-}
 
 #[derive(Debug, Deserialize)]
 struct CSVEntry {
@@ -189,8 +173,8 @@ fn multiply_matrix_by_matrix(
     return outputMatrix;
 }
 
-fn get_price_data_matrix(fileName: &str) -> PriceDataMatrix {
-    let mut reader = match csv::Reader::from_path(format!("./{}", fileName)) {
+fn get_price_data_matrix(file: &str) -> PriceDataMatrix {
+    let mut reader = match csv::Reader::from_path(format!("./data/{}.csv", file)) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("{e}");
@@ -208,8 +192,8 @@ fn get_price_data_matrix(fileName: &str) -> PriceDataMatrix {
     return outputMatrix;
 }
 
-fn get_price_data_vector(fileName: &str) -> Vec<f64> {
-    let mut reader = match csv::Reader::from_path(format!("./{}", fileName)) {
+fn get_baseline_price_data_vector() -> Vec<f64> {
+    let mut reader = match csv::Reader::from_path("./data/jet_fuel.csv") {
         Ok(f) => f,
         Err(e) => {
             eprintln!("{e}");
@@ -227,8 +211,27 @@ fn get_price_data_vector(fileName: &str) -> Vec<f64> {
     return outputVec;
 }
 
-fn plotResult(intercept: f64, mvhr: f64, priceData: PriceDataMatrix, baselineData: Vec<f64>) {
-    let root = BitMapBackend::new("regression_result.png", (800, 600)).into_drawing_area();
+fn plotResult(
+    rSquared: f64,
+    intercept: f64,
+    mvhr: f64,
+    priceData: PriceDataMatrix,
+    baselineData: Vec<f64>,
+    file: &str,
+) {
+    let graphTitle = if file == "wti" {
+        "West Texas Intermediate"
+    } else if file == "heating_oil" {
+        "Heating Oil"
+    } else if file == "brent" {
+        "Brent"
+    } else {
+        "Unknown"
+    };
+
+    let fileName = format!("./output/{}.png", file);
+
+    let root = BitMapBackend::new(&fileName, (800, 600)).into_drawing_area();
     root.fill(&style::WHITE).unwrap();
 
     let xMin = priceData.iter().fold(f64::INFINITY, |a, &b| a.min(b[1]));
@@ -251,7 +254,7 @@ fn plotResult(intercept: f64, mvhr: f64, priceData: PriceDataMatrix, baselineDat
         .collect();
 
     let mut chart = ChartBuilder::on(&root)
-        .caption("Cross-Hedging Regression", ("sans-serif", 30))
+        .caption(graphTitle, ("sans-serif", 30))
         .margin(20)
         .x_label_area_size(30)
         .y_label_area_size(30)
@@ -268,7 +271,9 @@ fn plotResult(intercept: f64, mvhr: f64, priceData: PriceDataMatrix, baselineDat
                 .iter()
                 .map(|(x, y)| Circle::new((*x, *y), 5, priceDataColour.filled())),
         )
-        .unwrap();
+        .unwrap()
+        .label(format!("R²: {rSquared}"))
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 1, y)], &style::BLACK));
 
     // The line itself
     chart
@@ -276,7 +281,9 @@ fn plotResult(intercept: f64, mvhr: f64, priceData: PriceDataMatrix, baselineDat
             vec![(xMin, yMin), (xMax, yMax)],
             &regLineColour,
         ))
-        .unwrap();
+        .unwrap()
+        .label(format!("Slope (MVHR): {mvhr}"))
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 1, y)], &style::BLACK));
 
     // Residual tails
     let mut sortedResidualsData: Vec<Vec<(f64, f64)>> = cleanZippedPriceData
@@ -293,7 +300,9 @@ fn plotResult(intercept: f64, mvhr: f64, priceData: PriceDataMatrix, baselineDat
                 .into_iter()
                 .map(|x| PathElement::new(x, residualColour)),
         )
-        .unwrap();
+        .unwrap()
+        .label(format!("Intercept (Basis Drift): {intercept}"))
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 1, y)], &style::BLACK));
 
     // These are the x and y axes (crossing through 0,0). Wanted to make sure these are visible
     chart
@@ -306,15 +315,44 @@ fn plotResult(intercept: f64, mvhr: f64, priceData: PriceDataMatrix, baselineDat
     chart
         .configure_series_labels()
         .background_style(backgroundColour)
+        .position(SeriesLabelPosition::LowerRight)
         .draw()
         .unwrap();
 }
 
-fn main() {
-    let args = Args::parse();
+fn printResultStatistics(
+    rSquared: &f64,
+    residSumSquares: &f64,
+    n: &f64,
+    alpha: &f64,
+    beta: &f64,
+    invertedGramMatrix: &TwoByTwoMatrix,
+) {
+    let degFreedom = n - 2.0; // We have 1 variable so df = n - k - 1 = n - 2 
+    let residualVariance = residSumSquares / degFreedom;
+    let alphaStandErr = (residualVariance * invertedGramMatrix[0][0]).sqrt();
+    let betaStandErr = (residualVariance * invertedGramMatrix[1][1]).sqrt();
+    let alphaTStat = (alpha / alphaStandErr).abs();
+    let betaTStat = (beta / betaStandErr).abs();
 
-    let baselineData = get_price_data_vector(&args.underlyingPriceChanges);
-    let priceData = get_price_data_matrix(&args.correlatedAssetPriceChanges);
+    println!("R^2 = {rSquared}, Intercept = {alpha}, MVHR = {beta}");
+    if alphaTStat >= 2.0 {
+        println!("Intercept (basis drift) statistically significant (T-stat: {alphaTStat})")
+    } else {
+        println!("Intercept (basis drift) statistically insignificant (T-stat: {alphaTStat})")
+    }
+
+    if betaTStat >= 2.0 {
+        println!("Slope (MVHR) statistically significant (T-stat: {betaTStat})")
+    } else {
+        println!("Slope (MVHR) statistically insignificant (T-stat: {betaTStat})")
+    }
+}
+
+fn runRegression(fileName: &str) {
+    println!("Running regression for {}", fileName);
+    let baselineData = get_baseline_price_data_vector();
+    let priceData = get_price_data_matrix(fileName);
 
     let gramMatrix = get_gram_matrix(&priceData);
     let priceDataTranspose = transpose(&priceData);
@@ -355,10 +393,23 @@ fn main() {
         sum += (actualPrice - predictedPrice).powi(2);
     }
     let residSumSquares = sum;
-
     let rSquared = 1.0 - (residSumSquares / totalSumSquares);
-    println!("R^2 = {rSquared}, Intercept = {alpha}, MVHR = {beta}");
-    plotResult(*alpha, *beta, priceData, baselineData);
+
+    printResultStatistics(
+        &rSquared,
+        &residSumSquares,
+        &(baselineData.len() as f64),
+        alpha,
+        beta,
+        &invertedGramMatrix,
+    );
+    plotResult(rSquared, *alpha, *beta, priceData, baselineData, fileName);
+}
+
+fn main() {
+    runRegression("brent");
+    runRegression("wti");
+    runRegression("heating_oil");
 }
 
 #[cfg(test)]
