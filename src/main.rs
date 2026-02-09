@@ -42,7 +42,7 @@ fn safe_get_float(firstIndex: usize, secondIndex: usize, vm: &ArbitrarySizeMatri
         .get(firstIndex)
         .expect("Missing A position in gram matrix")
         .get(secondIndex)
-        .expect("Missing A position in gram matrix");
+        .expect("Missing B position in gram matrix");
     return *val;
 }
 
