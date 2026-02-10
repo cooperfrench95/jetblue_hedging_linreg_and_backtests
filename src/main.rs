@@ -211,10 +211,102 @@ fn get_baseline_price_data_vector() -> Vec<f64> {
     return outputVec;
 }
 
+fn plotBacktestResult(
+    baseline: &Vec<f64>,
+    withBrentHedge: &Vec<f64>,
+    withWTIHedge: &Vec<f64>,
+    stdDevs: [f64; 3],
+) {
+    let fileName = "./output/backtest.png";
+    let root = BitMapBackend::new(&fileName, (1280, 720)).into_drawing_area();
+    root.fill(&style::WHITE).unwrap();
+
+    let baselineColour = style::MAGENTA.stroke_width(2);
+    let wtiColour = style::RED.stroke_width(2);
+    let brentColour = style::BLUE.stroke_width(2);
+    let backgroundColour = &style::WHITE.mix(0.5); // Faded a bit
+    let axisColour = style::BLACK.stroke_width(2);
+
+    let yMin = [baseline, withBrentHedge, withWTIHedge]
+        .iter()
+        .flat_map(|v| v.iter())
+        .fold(f64::INFINITY, |a, &b| a.min(b));
+    let yMax = [baseline, withBrentHedge, withWTIHedge]
+        .iter()
+        .flat_map(|v| v.iter())
+        .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+
+    let mut chart = ChartBuilder::on(&root)
+        .caption("PnL Backtest (2007-2011)", ("sans-serif", 40))
+        .margin(20)
+        .x_label_area_size(40)
+        .y_label_area_size(60)
+        .build_cartesian_2d(0.0..baseline.len() as f64, yMin..yMax)
+        .unwrap();
+
+    chart
+        .configure_mesh()
+        .y_desc("PnL ($million USD)")
+        .x_desc("Month")
+        .draw()
+        .unwrap();
+
+    // No hedge
+    chart
+        .draw_series(LineSeries::new(
+            baseline.iter().enumerate().map(|(x, &y)| (x as f64, y)),
+            baselineColour,
+        ))
+        .unwrap()
+        .label(format!("No Hedge (std. dev: {})", stdDevs[0]))
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], baselineColour));
+
+    // Brent
+    chart
+        .draw_series(LineSeries::new(
+            withBrentHedge
+                .iter()
+                .enumerate()
+                .map(|(x, &y)| (x as f64, y)),
+            brentColour,
+        ))
+        .unwrap()
+        .label(format!("Brent (std. dev: {})", stdDevs[1]))
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], brentColour));
+
+    // WTI
+    chart
+        .draw_series(LineSeries::new(
+            withWTIHedge.iter().enumerate().map(|(x, &y)| (x as f64, y)),
+            wtiColour,
+        ))
+        .unwrap()
+        .label(format!("WTI (std. dev: {})", stdDevs[2]))
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], wtiColour));
+
+    // These are the x and y axes (crossing through 0,0). Wanted to make sure these are visible
+    chart
+        .draw_series(LineSeries::new(
+            vec![(0.0, 0.0), (baseline.len() as f64, 0.0)],
+            axisColour,
+        ))
+        .unwrap();
+    chart
+        .draw_series(LineSeries::new(vec![(0.0, yMin), (0.0, yMax)], axisColour))
+        .unwrap();
+
+    chart
+        .configure_series_labels()
+        .background_style(backgroundColour)
+        .position(SeriesLabelPosition::LowerRight)
+        .draw()
+        .unwrap();
+}
+
 fn plotResult(
     rSquared: f64,
     intercept: f64,
-    mvhr: f64,
+    mvhr: &f64,
     priceData: PriceDataMatrix,
     baselineData: Vec<f64>,
     file: &str,
@@ -349,7 +441,72 @@ fn printResultStatistics(
     }
 }
 
-fn runRegression(fileName: &str) {
+fn runBacktests() {
+    let brentMVHR = runRegression("brent");
+    let wtiMVHR = runRegression("wti");
+    runRegression("heating_oil");
+
+    let MONTHLY_FUEL_HEDGE: f64 = 20_000_000.0;
+    let CONTRACT_SIZE: f64 = 42_000.0;
+    let AMOUNT_CONTRACTS_BRENT: f64 = ((MONTHLY_FUEL_HEDGE / CONTRACT_SIZE) * brentMVHR).round();
+    let AMOUNT_CONTRACTS_WTI: f64 = ((MONTHLY_FUEL_HEDGE / CONTRACT_SIZE) * wtiMVHR).round();
+    let MONTHLY_FUEL_CONSUMPTION: f64 = 525_000_000.0 / 12.0;
+    let SCALE_AMOUNT = 1_000_000.0;
+
+    let baselineData = get_baseline_price_data_vector();
+    let priceDataBrent = get_price_data_matrix("brent");
+    let priceDataWTI = get_price_data_matrix("wti");
+
+    let capacity = baselineData.len();
+
+    let mut monthlyPnLNoHedge = Vec::with_capacity(capacity);
+    let mut monthlyPnLBrentHedge = Vec::with_capacity(capacity);
+    let mut monthlyPnLWTIHedge = Vec::with_capacity(capacity);
+
+    for (index, priceChange) in baselineData.iter().enumerate() {
+        let PnL_on_underlying = MONTHLY_FUEL_CONSUMPTION * priceChange / SCALE_AMOUNT;
+        let brentPriceChange = priceDataBrent[index][1];
+        let wtiPriceChange = priceDataWTI[index][1];
+
+        monthlyPnLNoHedge.push(PnL_on_underlying);
+        monthlyPnLBrentHedge.push(
+            PnL_on_underlying
+                // Note the negative sign here, because it's a hedge the price movement has the opposing effect on PnL
+                + -((brentPriceChange * AMOUNT_CONTRACTS_BRENT * CONTRACT_SIZE) / SCALE_AMOUNT),
+        );
+        monthlyPnLWTIHedge.push(
+            PnL_on_underlying
+                + -((wtiPriceChange * AMOUNT_CONTRACTS_WTI * CONTRACT_SIZE) / SCALE_AMOUNT),
+        );
+    }
+
+    let stdDevNoHedge = standardDeviation(&monthlyPnLNoHedge);
+    let stdDevBrentHedge = standardDeviation(&monthlyPnLBrentHedge);
+    let stdDevWTIHedge = standardDeviation(&monthlyPnLWTIHedge);
+
+    plotBacktestResult(
+        &monthlyPnLNoHedge,
+        &monthlyPnLBrentHedge,
+        &monthlyPnLWTIHedge,
+        // Order matters here, should probably use a struct, but cbf right now
+        [stdDevNoHedge, stdDevBrentHedge, stdDevWTIHedge],
+    );
+}
+
+fn standardDeviation(values: &Vec<f64>) -> f64 {
+    let mut sum = 0.0;
+    let n = values.len() as f64;
+    let mean: f64 = values.iter().sum::<f64>() / n;
+
+    for entry in values.iter() {
+        sum += (entry - mean).powi(2);
+    }
+
+    let stdDev = (sum / n - 1.0).sqrt();
+    return stdDev;
+}
+
+fn runRegression(fileName: &str) -> f64 {
     println!("Running regression for {}", fileName);
     let baselineData = get_baseline_price_data_vector();
     let priceData = get_price_data_matrix(fileName);
@@ -403,13 +560,12 @@ fn runRegression(fileName: &str) {
         beta,
         &invertedGramMatrix,
     );
-    plotResult(rSquared, *alpha, *beta, priceData, baselineData, fileName);
+    plotResult(rSquared, *alpha, beta, priceData, baselineData, fileName);
+    return *beta;
 }
 
 fn main() {
-    runRegression("brent");
-    runRegression("wti");
-    runRegression("heating_oil");
+    runBacktests();
 }
 
 #[cfg(test)]
