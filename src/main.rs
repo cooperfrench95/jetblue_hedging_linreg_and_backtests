@@ -30,12 +30,13 @@ struct BacktestResult {
     monthlyPnL: Vec<f64>,
     stdDev: f64,
     mvhr: f64,
+    numContracts: f64,
 }
 
 struct BacktestResults {
     noHedge: BacktestResult,
-    withBrentHedge: BacktestResult,
     withWTIHedge: BacktestResult,
+    withBrentHedge: BacktestResult,
 }
 
 fn getDeterminant(matrix: &TwoByTwoMatrix) -> f64 {
@@ -234,31 +235,73 @@ fn printBacktestStats(backtestResults: &BacktestResults) {
         backtestResults.noHedge.maxDrawdown
     );
     println!(
-        "Std. dev (in $ millions): {:.2}",
+        "Max. monthly loss: -${:.2?} million",
+        backtestResults
+            .noHedge
+            .monthlyPnL
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .abs()
+    );
+    println!(
+        "Std. dev (volatility): ${:.2} million",
         backtestResults.noHedge.stdDev
     );
     println!("MVHR: {:.2} (N/A)", backtestResults.noHedge.mvhr);
-    println!("--------Brent---------");
     println!(
-        "Max. drawdown: -${:.2} million",
-        backtestResults.withBrentHedge.maxDrawdown
+        "Num. contracts: {:?}",
+        backtestResults.noHedge.numContracts as usize
     );
-    println!(
-        "Std. dev (in $ millions): {:.2}",
-        backtestResults.withBrentHedge.stdDev
-    );
-    println!("MVHR: {:.2}", backtestResults.withBrentHedge.mvhr);
     println!("---------WTI----------");
     println!(
         "Max. drawdown: -${:.2} million",
         backtestResults.withWTIHedge.maxDrawdown
     );
     println!(
-        "Std. dev (in $ millions): {:.2}",
+        "Max. monthly loss: -${:.2?} million",
+        backtestResults
+            .withWTIHedge
+            .monthlyPnL
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .abs()
+    );
+    println!(
+        "Std. dev (volatility): ${:.2} million",
         backtestResults.withWTIHedge.stdDev
     );
     println!("MVHR: {:.2}", backtestResults.withWTIHedge.mvhr);
+    println!(
+        "Num. contracts: {:?}",
+        backtestResults.withBrentHedge.numContracts as usize
+    );
     println!("-----------------------------------------------");
+    println!("--------Brent---------");
+    println!(
+        "Max. drawdown: -${:.2} million",
+        backtestResults.withBrentHedge.maxDrawdown
+    );
+    println!(
+        "Max. monthly loss: -${:.2?} million",
+        backtestResults
+            .withBrentHedge
+            .monthlyPnL
+            .iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .abs()
+    );
+    println!(
+        "Std. dev (volatility): ${:.2} million",
+        backtestResults.withBrentHedge.stdDev
+    );
+    println!("MVHR: {:.2}", backtestResults.withBrentHedge.mvhr);
+    println!(
+        "Num. contracts: {:?}",
+        backtestResults.withBrentHedge.numContracts as usize
+    );
 }
 
 fn plotBacktestResult(backtestResults: BacktestResults) {
@@ -323,24 +366,6 @@ fn plotBacktestResult(backtestResults: BacktestResults) {
         ))
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], baselineColour));
 
-    // Brent
-    chart
-        .draw_series(LineSeries::new(
-            backtestResults
-                .withBrentHedge
-                .monthlyPnL
-                .iter()
-                .enumerate()
-                .map(|(x, &y)| (x as f64, y)),
-            brentColour,
-        ))
-        .unwrap()
-        .label(format!(
-            "Brent (std. dev: ${:.2} million)",
-            backtestResults.withBrentHedge.stdDev
-        ))
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], brentColour));
-
     // WTI
     chart
         .draw_series(LineSeries::new(
@@ -358,6 +383,24 @@ fn plotBacktestResult(backtestResults: BacktestResults) {
             backtestResults.withWTIHedge.stdDev
         ))
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], wtiColour));
+
+    // Brent
+    chart
+        .draw_series(LineSeries::new(
+            backtestResults
+                .withBrentHedge
+                .monthlyPnL
+                .iter()
+                .enumerate()
+                .map(|(x, &y)| (x as f64, y)),
+            brentColour,
+        ))
+        .unwrap()
+        .label(format!(
+            "Brent (std. dev: ${:.2} million)",
+            backtestResults.withBrentHedge.stdDev
+        ))
+        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], brentColour));
 
     // These are the x and y axes (crossing through 0,0). Wanted to make sure these are visible
     chart
@@ -539,7 +582,8 @@ fn runBacktests() {
             maxDrawdown: 0.0,
             monthlyPnL: Vec::with_capacity(capacity),
             stdDev: 0.0,
-            mvhr: 1.0, // N/A in this case
+            mvhr: 1.0,         // N/A in this case
+            numContracts: 0.0, // N/A again
         },
         withBrentHedge: BacktestResult {
             cumulativeMonthlyPnL: 0.0,
@@ -548,6 +592,7 @@ fn runBacktests() {
             monthlyPnL: Vec::with_capacity(capacity),
             stdDev: 0.0,
             mvhr: brentMVHR,
+            numContracts: AMOUNT_CONTRACTS_BRENT,
         },
         withWTIHedge: BacktestResult {
             cumulativeMonthlyPnL: 0.0,
@@ -556,6 +601,7 @@ fn runBacktests() {
             monthlyPnL: Vec::with_capacity(capacity),
             stdDev: 0.0,
             mvhr: wtiMVHR,
+            numContracts: AMOUNT_CONTRACTS_WTI,
         },
     };
 
