@@ -23,6 +23,21 @@ type ArbitrarySizeMatrix = Vec<Vec<f64>>;
 
 type PriceDataMatrix = Vec<SimpleVector>;
 
+struct BacktestResult {
+    cumulativeMonthlyPnL: f64,
+    cumPnLPeak: f64,
+    maxDrawdown: f64,
+    monthlyPnL: Vec<f64>,
+    stdDev: f64,
+    mvhr: f64,
+}
+
+struct BacktestResults {
+    noHedge: BacktestResult,
+    withBrentHedge: BacktestResult,
+    withWTIHedge: BacktestResult,
+}
+
 fn getDeterminant(matrix: &TwoByTwoMatrix) -> f64 {
     let a = matrix[0][0];
     let b = matrix[0][1];
@@ -211,12 +226,42 @@ fn get_baseline_price_data_vector() -> Vec<f64> {
     return outputVec;
 }
 
-fn plotBacktestResult(
-    baseline: &Vec<f64>,
-    withBrentHedge: &Vec<f64>,
-    withWTIHedge: &Vec<f64>,
-    stdDevs: [f64; 3],
-) {
+fn printBacktestStats(backtestResults: &BacktestResults) {
+    println!("-------------------BACKTESTS-------------------");
+    println!("-------No hedge-------");
+    println!(
+        "Max. drawdown: -${:.2} million",
+        backtestResults.noHedge.maxDrawdown
+    );
+    println!(
+        "Std. dev (in $ millions): {:.2}",
+        backtestResults.noHedge.stdDev
+    );
+    println!("MVHR: {:.2} (N/A)", backtestResults.noHedge.mvhr);
+    println!("--------Brent---------");
+    println!(
+        "Max. drawdown: -${:.2} million",
+        backtestResults.withBrentHedge.maxDrawdown
+    );
+    println!(
+        "Std. dev (in $ millions): {:.2}",
+        backtestResults.withBrentHedge.stdDev
+    );
+    println!("MVHR: {:.2}", backtestResults.withBrentHedge.mvhr);
+    println!("---------WTI----------");
+    println!(
+        "Max. drawdown: -${:.2} million",
+        backtestResults.withWTIHedge.maxDrawdown
+    );
+    println!(
+        "Std. dev (in $ millions): {:.2}",
+        backtestResults.withWTIHedge.stdDev
+    );
+    println!("MVHR: {:.2}", backtestResults.withWTIHedge.mvhr);
+    println!("-----------------------------------------------");
+}
+
+fn plotBacktestResult(backtestResults: BacktestResults) {
     let fileName = "./output/backtest.png";
     let root = BitMapBackend::new(&fileName, (1280, 720)).into_drawing_area();
     root.fill(&style::WHITE).unwrap();
@@ -226,22 +271,31 @@ fn plotBacktestResult(
     let brentColour = style::BLUE.stroke_width(2);
     let backgroundColour = &style::WHITE.mix(0.5); // Faded a bit
     let axisColour = style::BLACK.stroke_width(2);
+    let n = backtestResults.noHedge.monthlyPnL.len() as f64;
 
-    let yMin = [baseline, withBrentHedge, withWTIHedge]
-        .iter()
-        .flat_map(|v| v.iter())
-        .fold(f64::INFINITY, |a, &b| a.min(b));
-    let yMax = [baseline, withBrentHedge, withWTIHedge]
-        .iter()
-        .flat_map(|v| v.iter())
-        .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    let yMin = [
+        &backtestResults.noHedge.monthlyPnL,
+        &backtestResults.withBrentHedge.monthlyPnL,
+        &backtestResults.withWTIHedge.monthlyPnL,
+    ]
+    .iter()
+    .flat_map(|v| v.iter())
+    .fold(f64::INFINITY, |a, &b| a.min(b));
+    let yMax = [
+        &backtestResults.noHedge.monthlyPnL,
+        &backtestResults.withBrentHedge.monthlyPnL,
+        &backtestResults.withWTIHedge.monthlyPnL,
+    ]
+    .iter()
+    .flat_map(|v| v.iter())
+    .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
     let mut chart = ChartBuilder::on(&root)
         .caption("PnL Backtest (2007-2011)", ("sans-serif", 40))
         .margin(20)
         .x_label_area_size(40)
         .y_label_area_size(60)
-        .build_cartesian_2d(0.0..baseline.len() as f64, yMin..yMax)
+        .build_cartesian_2d(0.0..n, yMin..yMax)
         .unwrap();
 
     chart
@@ -254,42 +308,60 @@ fn plotBacktestResult(
     // No hedge
     chart
         .draw_series(LineSeries::new(
-            baseline.iter().enumerate().map(|(x, &y)| (x as f64, y)),
+            backtestResults
+                .noHedge
+                .monthlyPnL
+                .iter()
+                .enumerate()
+                .map(|(x, &y)| (x as f64, y)),
             baselineColour,
         ))
         .unwrap()
-        .label(format!("No Hedge (std. dev: {})", stdDevs[0]))
+        .label(format!(
+            "No Hedge (std. dev: ${:.2} million)",
+            backtestResults.noHedge.stdDev
+        ))
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], baselineColour));
 
     // Brent
     chart
         .draw_series(LineSeries::new(
-            withBrentHedge
+            backtestResults
+                .withBrentHedge
+                .monthlyPnL
                 .iter()
                 .enumerate()
                 .map(|(x, &y)| (x as f64, y)),
             brentColour,
         ))
         .unwrap()
-        .label(format!("Brent (std. dev: {})", stdDevs[1]))
+        .label(format!(
+            "Brent (std. dev: ${:.2} million)",
+            backtestResults.withBrentHedge.stdDev
+        ))
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], brentColour));
 
     // WTI
     chart
         .draw_series(LineSeries::new(
-            withWTIHedge.iter().enumerate().map(|(x, &y)| (x as f64, y)),
+            backtestResults
+                .withWTIHedge
+                .monthlyPnL
+                .iter()
+                .enumerate()
+                .map(|(x, &y)| (x as f64, y)),
             wtiColour,
         ))
         .unwrap()
-        .label(format!("WTI (std. dev: {})", stdDevs[2]))
+        .label(format!(
+            "WTI (std. dev: ${:.2} million)",
+            backtestResults.withWTIHedge.stdDev
+        ))
         .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], wtiColour));
 
     // These are the x and y axes (crossing through 0,0). Wanted to make sure these are visible
     chart
-        .draw_series(LineSeries::new(
-            vec![(0.0, 0.0), (baseline.len() as f64, 0.0)],
-            axisColour,
-        ))
+        .draw_series(LineSeries::new(vec![(0.0, 0.0), (n, 0.0)], axisColour))
         .unwrap();
     chart
         .draw_series(LineSeries::new(vec![(0.0, yMin), (0.0, yMax)], axisColour))
@@ -442,6 +514,7 @@ fn printResultStatistics(
 }
 
 fn runBacktests() {
+    println!("-------------------REGRESSION-------------------");
     let brentMVHR = runRegression("brent");
     let wtiMVHR = runRegression("wti");
     runRegression("heating_oil");
@@ -459,38 +532,94 @@ fn runBacktests() {
 
     let capacity = baselineData.len();
 
-    let mut monthlyPnLNoHedge = Vec::with_capacity(capacity);
-    let mut monthlyPnLBrentHedge = Vec::with_capacity(capacity);
-    let mut monthlyPnLWTIHedge = Vec::with_capacity(capacity);
+    let mut backtestResults = BacktestResults {
+        noHedge: BacktestResult {
+            cumulativeMonthlyPnL: 0.0,
+            cumPnLPeak: 0.0,
+            maxDrawdown: 0.0,
+            monthlyPnL: Vec::with_capacity(capacity),
+            stdDev: 0.0,
+            mvhr: 1.0, // N/A in this case
+        },
+        withBrentHedge: BacktestResult {
+            cumulativeMonthlyPnL: 0.0,
+            cumPnLPeak: 0.0,
+            maxDrawdown: 0.0,
+            monthlyPnL: Vec::with_capacity(capacity),
+            stdDev: 0.0,
+            mvhr: brentMVHR,
+        },
+        withWTIHedge: BacktestResult {
+            cumulativeMonthlyPnL: 0.0,
+            cumPnLPeak: 0.0,
+            maxDrawdown: 0.0,
+            monthlyPnL: Vec::with_capacity(capacity),
+            stdDev: 0.0,
+            mvhr: wtiMVHR,
+        },
+    };
 
     for (index, priceChange) in baselineData.iter().enumerate() {
         let PnL_on_underlying = MONTHLY_FUEL_CONSUMPTION * priceChange / SCALE_AMOUNT;
         let brentPriceChange = priceDataBrent[index][1];
         let wtiPriceChange = priceDataWTI[index][1];
 
-        monthlyPnLNoHedge.push(PnL_on_underlying);
-        monthlyPnLBrentHedge.push(
-            PnL_on_underlying
+        // No hedge
+        backtestResults.noHedge.monthlyPnL.push(PnL_on_underlying);
+        backtestResults.noHedge.cumulativeMonthlyPnL += PnL_on_underlying;
+        if backtestResults.noHedge.cumPnLPeak < backtestResults.noHedge.cumulativeMonthlyPnL {
+            backtestResults.noHedge.cumPnLPeak = backtestResults.noHedge.cumulativeMonthlyPnL;
+        }
+        let noHedgeDrawdown =
+            backtestResults.noHedge.cumulativeMonthlyPnL - backtestResults.noHedge.cumPnLPeak;
+        if noHedgeDrawdown.abs() > backtestResults.noHedge.maxDrawdown.abs() {
+            backtestResults.noHedge.maxDrawdown = noHedgeDrawdown.abs();
+        }
+
+        // Brent
+        let brentProfit = PnL_on_underlying
                 // Note the negative sign here, because it's a hedge the price movement has the opposing effect on PnL
-                + -((brentPriceChange * AMOUNT_CONTRACTS_BRENT * CONTRACT_SIZE) / SCALE_AMOUNT),
-        );
-        monthlyPnLWTIHedge.push(
-            PnL_on_underlying
-                + -((wtiPriceChange * AMOUNT_CONTRACTS_WTI * CONTRACT_SIZE) / SCALE_AMOUNT),
-        );
+                + -((brentPriceChange * AMOUNT_CONTRACTS_BRENT * CONTRACT_SIZE) / SCALE_AMOUNT);
+        backtestResults.withBrentHedge.monthlyPnL.push(brentProfit);
+        backtestResults.withBrentHedge.cumulativeMonthlyPnL += brentProfit;
+        if backtestResults.withBrentHedge.cumPnLPeak
+            < backtestResults.withBrentHedge.cumulativeMonthlyPnL
+        {
+            backtestResults.withBrentHedge.cumPnLPeak =
+                backtestResults.withBrentHedge.cumulativeMonthlyPnL;
+        }
+        let withBrentHedgeDrawdown = backtestResults.withBrentHedge.cumulativeMonthlyPnL
+            - backtestResults.withBrentHedge.cumPnLPeak;
+        if withBrentHedgeDrawdown.abs() > backtestResults.withBrentHedge.maxDrawdown.abs() {
+            backtestResults.withBrentHedge.maxDrawdown = withBrentHedgeDrawdown.abs();
+        }
+        // WTI
+        let wtiProfit = PnL_on_underlying
+            // Note the negative sign here, because it's a hedge the price movement has the opposing effect on PnL
+            + -((wtiPriceChange * AMOUNT_CONTRACTS_WTI * CONTRACT_SIZE) / SCALE_AMOUNT);
+        backtestResults.withWTIHedge.monthlyPnL.push(wtiProfit);
+        backtestResults.withWTIHedge.cumulativeMonthlyPnL += wtiProfit;
+        if backtestResults.withWTIHedge.cumPnLPeak
+            < backtestResults.withWTIHedge.cumulativeMonthlyPnL
+        {
+            backtestResults.withWTIHedge.cumPnLPeak =
+                backtestResults.withWTIHedge.cumulativeMonthlyPnL;
+        }
+        let withWTIHedgeDrawdown = backtestResults.withWTIHedge.cumulativeMonthlyPnL
+            - backtestResults.withWTIHedge.cumPnLPeak;
+        if withWTIHedgeDrawdown.abs() > backtestResults.withWTIHedge.maxDrawdown.abs() {
+            backtestResults.withWTIHedge.maxDrawdown = withWTIHedgeDrawdown.abs();
+        }
     }
 
-    let stdDevNoHedge = standardDeviation(&monthlyPnLNoHedge);
-    let stdDevBrentHedge = standardDeviation(&monthlyPnLBrentHedge);
-    let stdDevWTIHedge = standardDeviation(&monthlyPnLWTIHedge);
+    backtestResults.noHedge.stdDev = standardDeviation(&backtestResults.noHedge.monthlyPnL);
+    backtestResults.withBrentHedge.stdDev =
+        standardDeviation(&backtestResults.withBrentHedge.monthlyPnL);
+    backtestResults.withWTIHedge.stdDev =
+        standardDeviation(&backtestResults.withWTIHedge.monthlyPnL);
 
-    plotBacktestResult(
-        &monthlyPnLNoHedge,
-        &monthlyPnLBrentHedge,
-        &monthlyPnLWTIHedge,
-        // Order matters here, should probably use a struct, but cbf right now
-        [stdDevNoHedge, stdDevBrentHedge, stdDevWTIHedge],
-    );
+    printBacktestStats(&backtestResults);
+    plotBacktestResult(backtestResults);
 }
 
 fn standardDeviation(values: &Vec<f64>) -> f64 {
@@ -502,7 +631,7 @@ fn standardDeviation(values: &Vec<f64>) -> f64 {
         sum += (entry - mean).powi(2);
     }
 
-    let stdDev = (sum / n - 1.0).sqrt();
+    let stdDev = (sum / (n - 1.0)).sqrt();
     return stdDev;
 }
 
