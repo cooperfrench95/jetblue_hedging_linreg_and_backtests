@@ -275,9 +275,8 @@ fn printBacktestStats(backtestResults: &BacktestResults) {
     println!("MVHR: {:.2}", backtestResults.withWTIHedge.mvhr);
     println!(
         "Num. contracts: {:?}",
-        backtestResults.withBrentHedge.numContracts as usize
+        backtestResults.withWTIHedge.numContracts as usize
     );
-    println!("-----------------------------------------------");
     println!("--------Brent---------");
     println!(
         "Max. drawdown: -${:.2} million",
@@ -302,6 +301,7 @@ fn printBacktestStats(backtestResults: &BacktestResults) {
         "Num. contracts: {:?}",
         backtestResults.withBrentHedge.numContracts as usize
     );
+    println!("-----------------------------------------------");
 }
 
 fn plotBacktestResult(backtestResults: BacktestResults) {
