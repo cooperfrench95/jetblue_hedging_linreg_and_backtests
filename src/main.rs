@@ -228,7 +228,7 @@ fn get_baseline_price_data_vector() -> Vec<f64> {
 }
 
 fn printBacktestStats(backtestResults: &BacktestResults) {
-    println!("-------------------BACKTESTS-------------------");
+    println!("\n-------------------BACKTESTS-------------------\n");
     println!("-------No hedge-------");
     println!(
         "Max. drawdown: -${:.2} million",
@@ -301,7 +301,7 @@ fn printBacktestStats(backtestResults: &BacktestResults) {
         "Num. contracts: {:?}",
         backtestResults.withBrentHedge.numContracts as usize
     );
-    println!("-----------------------------------------------");
+    println!("\n-----------------------------------------------");
 }
 
 fn plotBacktestResult(backtestResults: BacktestResults) {
@@ -542,7 +542,7 @@ fn printResultStatistics(
     let alphaTStat = (alpha / alphaStandErr).abs();
     let betaTStat = (beta / betaStandErr).abs();
 
-    println!("R^2 = {rSquared}, Intercept = {alpha}, MVHR = {beta}");
+    println!("\nR^2 = {rSquared}, Intercept = {alpha}, MVHR = {beta}");
     if alphaTStat >= 2.0 {
         println!("Intercept (basis drift) statistically significant (T-stat: {alphaTStat})")
     } else {
@@ -557,7 +557,7 @@ fn printResultStatistics(
 }
 
 fn runBacktests() {
-    println!("-------------------REGRESSION-------------------");
+    println!("\n-------------------REGRESSION-------------------\n");
     let brentMVHR = runRegression("brent");
     let wtiMVHR = runRegression("wti");
     runRegression("heating_oil");
