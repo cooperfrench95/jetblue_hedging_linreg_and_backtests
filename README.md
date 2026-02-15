@@ -28,7 +28,7 @@ However, I wanted to take this opportunity to build both my practical experience
 
 Here's my roadmap in a perfect world where I have time to perfect this project:
 
-* A more complete unit test suite. I've written one or two tests validating some of the mathematical functions, but I'd prefer more test coverage. I also didn't want to just add AI slop tests; I'm trying to actually learn something here.
+* A more complete unit test suite. I've written a few tests validating some of the mathematical functions, but I'd prefer more test coverage. I also didn't want to just add AI slop tests; I'm trying to actually learn something here.
 * Genericize - I'd like to be able to pass in the input data files or something similar so that this can be re-used for other applications easily.
 * Performance optimizations - I'm using `Vec<f64>` all over the place here, where a stack-based data structure would be more ideal in some instances. There is definitely some room to improve in this regard.
 * Modules - All of the code is within a single main.rs file, and it's somewhat messy. This needs to be split up for cleanliness.
@@ -48,16 +48,19 @@ Expected CLI output is like so:
 ```
 -------------------REGRESSION-------------------
 
+
 Running regression for brent
 
 R^2 = 0.8993725346663233, Intercept = -0.0008253956575575011, MVHR = 1.0519437626103143
 Intercept (basis drift) statistically insignificant (T-stat: 0.08691309500064658)
 Slope (MVHR) statistically significant (T-stat: 22.76803447848532)
+
 Running regression for wti
 
 R^2 = 0.852536994743368, Intercept = 0.004337192272044314, MVHR = 1.0182273689954757
 Intercept (basis drift) statistically insignificant (T-stat: 0.3779632356212812)
 Slope (MVHR) statistically significant (T-stat: 18.311717233347107)
+
 Running regression for heating_oil
 
 R^2 = 0.9575976508050335, Intercept = -0.0029551530484851762, MVHR = 1.0321498350373162

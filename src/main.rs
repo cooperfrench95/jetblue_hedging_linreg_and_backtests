@@ -1,5 +1,9 @@
 #![allow(non_snake_case)]
 
+pub mod linear_algebra;
+#[cfg(test)]
+mod tests;
+
 use csv;
 use plotters::{
     self,
@@ -38,21 +42,6 @@ struct BacktestResults {
     withWTIHedge: BacktestResult,
     withBrentHedge: BacktestResult,
 }
-
-fn getDeterminant(matrix: &TwoByTwoMatrix) -> f64 {
-    let a = matrix[0][0];
-    let b = matrix[0][1];
-    let c = matrix[1][0];
-    let d: f64 = matrix[1][1];
-
-    (a * d) - (b * c)
-}
-
-fn dot_product(row: &Vec<f64>, col: &Vec<f64>) -> f64 {
-    // "zip" each element together, times each one by its pair, then sum the results
-    return row.iter().zip(col).map(|(a, b)| a * b).sum();
-}
-
 fn safe_get_float(firstIndex: usize, secondIndex: usize, vm: &ArbitrarySizeMatrix) -> f64 {
     let val = vm
         .get(firstIndex)
@@ -84,109 +73,6 @@ fn from2By2Matrix(input: &TwoByTwoMatrix) -> ArbitrarySizeMatrix {
     outputVec.push(internalVecTwo);
 
     return outputVec;
-}
-
-fn transpose(matrix: &PriceDataMatrix) -> ArbitrarySizeMatrix {
-    let mut internalVecOne: Vec<f64> = Vec::with_capacity(matrix.len());
-    let mut internalVecTwo: Vec<f64> = Vec::with_capacity(matrix.len());
-    let mut transposed = Vec::with_capacity(2);
-
-    for vector in matrix.iter() {
-        internalVecOne.push(vector[0]);
-        internalVecTwo.push(vector[1]);
-    }
-
-    transposed.push(internalVecOne);
-    transposed.push(internalVecTwo);
-
-    return transposed;
-}
-
-fn get_gram_matrix(matrix: &PriceDataMatrix) -> TwoByTwoMatrix {
-    let transposed = transpose(matrix);
-    let mut originalMatrixAsVec = Vec::with_capacity(matrix.len());
-
-    for vector in matrix.iter() {
-        let mut reconstructedVec = Vec::new();
-        reconstructedVec.push(vector[0]);
-        reconstructedVec.push(vector[1]);
-        originalMatrixAsVec.push(reconstructedVec);
-    }
-
-    let asVectorMatrix = multiply_matrix_by_matrix(&transposed, &originalMatrixAsVec);
-
-    return to2By2Matrix(&asVectorMatrix);
-}
-
-fn invert(matrix: &TwoByTwoMatrix) -> TwoByTwoMatrix {
-    let determinant: f64 = getDeterminant(&matrix);
-
-    if determinant == 0f64 {
-        panic!("Cannot invert matrix with determinant of 0")
-    }
-
-    let negOne = -1f64;
-
-    let negatedForm: TwoByTwoMatrix = [
-        [matrix[1][1], negOne * matrix[0][1]],
-        [negOne * matrix[1][0], matrix[0][0]],
-    ];
-
-    let inverted = multiply_matrix_by_scalar(&negatedForm, 1f64 / determinant);
-    return inverted;
-}
-
-fn multiply_matrix_by_vector(matrix: &ArbitrarySizeMatrix, vec: &Vec<f64>) -> Vec<f64> {
-    let mut outputVec: Vec<f64> = Vec::with_capacity(matrix.len());
-
-    for rowNum in 0..matrix.len() {
-        outputVec.push(dot_product(&matrix[rowNum], vec))
-    }
-
-    return outputVec;
-}
-
-fn multiply_matrix_by_scalar(matrix: &TwoByTwoMatrix, scalar: f64) -> TwoByTwoMatrix {
-    return [
-        [matrix[0][0] * scalar, matrix[0][1] * scalar],
-        [matrix[1][0] * scalar, matrix[1][1] * scalar],
-    ];
-}
-
-fn multiply_matrix_by_matrix(
-    matrixOne: &Vec<Vec<f64>>,
-    matrixTwo: &Vec<Vec<f64>>,
-) -> ArbitrarySizeMatrix {
-    let outputLength = matrixOne.len();
-    let columnLength = matrixTwo[0].len();
-    if columnLength != outputLength {
-        panic!("Cannot multiply matrices with incompatible sizes")
-    }
-
-    // Construct output vec data structure first
-    let mut outputMatrix: Vec<Vec<f64>> = Vec::with_capacity(outputLength);
-    for _rowNum in 0..outputLength {
-        let rowVector: Vec<f64> = Vec::with_capacity(columnLength);
-        outputMatrix.push(rowVector);
-    }
-
-    for rowNum in 0..outputLength {
-        for colNum in 0..columnLength {
-            // Construct the column vector so we can calculate the dot product for the row and col
-            let mut columnVec: Vec<f64> = Vec::with_capacity(columnLength);
-            for entry in matrixTwo.iter() {
-                columnVec.push(entry[colNum])
-            }
-            let dp = dot_product(&matrixOne[rowNum], &columnVec);
-
-            outputMatrix
-                .get_mut(rowNum)
-                .expect("Unexpected output vector length")
-                .push(dp);
-        }
-    }
-
-    return outputMatrix;
 }
 
 fn get_price_data_matrix(file: &str) -> PriceDataMatrix {
@@ -682,15 +568,16 @@ fn standardDeviation(values: &Vec<f64>) -> f64 {
 }
 
 fn runRegression(fileName: &str) -> f64 {
-    println!("Running regression for {}", fileName);
+    println!("\nRunning regression for {}", fileName);
     let baselineData = get_baseline_price_data_vector();
     let priceData = get_price_data_matrix(fileName);
 
-    let gramMatrix = get_gram_matrix(&priceData);
-    let priceDataTranspose = transpose(&priceData);
-    let baselineToPriceCovariance = multiply_matrix_by_vector(&priceDataTranspose, &baselineData);
-    let invertedGramMatrix = invert(&gramMatrix);
-    let coefficients = multiply_matrix_by_vector(
+    let gramMatrix = linear_algebra::get_gram_matrix(&priceData);
+    let priceDataTranspose = linear_algebra::transpose(&priceData);
+    let baselineToPriceCovariance =
+        linear_algebra::multiply_matrix_by_vector(&priceDataTranspose, &baselineData);
+    let invertedGramMatrix = linear_algebra::invert(&gramMatrix);
+    let coefficients = linear_algebra::multiply_matrix_by_vector(
         &from2By2Matrix(&invertedGramMatrix),
         &baselineToPriceCovariance,
     );
@@ -741,57 +628,4 @@ fn runRegression(fileName: &str) -> f64 {
 
 fn main() {
     runBacktests();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use approx::assert_relative_eq;
-
-    fn assert_vecf64_eq(vecOne: &Vec<f64>, vecTwo: &Vec<f64>) {
-        assert_relative_eq!(vecOne.as_slice(), vecTwo.as_slice(), epsilon = f64::EPSILON)
-    }
-
-    fn assert_matrix_f64_eq(matrixOne: &Vec<Vec<f64>>, matrixTwo: &Vec<Vec<f64>>) {
-        for (index, entry) in matrixOne.iter().enumerate() {
-            let correspondingEntry = matrixTwo.get(index);
-            assert_vecf64_eq(&entry, &correspondingEntry.unwrap());
-        }
-    }
-
-    #[test]
-    fn multiply_matrices() {
-        // 2x2
-        let matrixA: Vec<Vec<f64>> = vec![vec![1f64, 2f64], vec![-1f64, 3f64]];
-        let matrixB: Vec<Vec<f64>> = vec![vec![2f64, 1f64], vec![2f64, -2f64]];
-        let expectedOutputMatrix = vec![vec![6f64, -3f64], vec![4f64, -7f64]];
-        let result = multiply_matrix_by_matrix(&matrixA, &matrixB);
-        assert_matrix_f64_eq(&expectedOutputMatrix, &result);
-
-        // 3x3
-        let matrixA: Vec<Vec<f64>> = vec![
-            vec![1f64, 2f64, -1f64],
-            vec![-1f64, 3f64, 0f64],
-            vec![2f64, 0f64, 2f64],
-        ];
-        let matrixB: Vec<Vec<f64>> = vec![
-            vec![2f64, 1f64, 4f64],
-            vec![2f64, -2f64, 0f64],
-            vec![0f64, 1f64, 0f64],
-        ];
-        let expectedOutputMatrix = vec![
-            vec![6f64, -4f64, 4f64],
-            vec![4f64, -7f64, -4f64],
-            vec![4f64, 4f64, 8f64],
-        ];
-        let result = multiply_matrix_by_matrix(&matrixA, &matrixB);
-        assert_matrix_f64_eq(&expectedOutputMatrix, &result);
-
-        // 3x2
-        let matrixA: Vec<Vec<f64>> = vec![vec![1f64, 2f64, -1f64], vec![-1f64, 3f64, 0f64]];
-        let matrixB: Vec<Vec<f64>> = vec![vec![2f64, 1f64], vec![2f64, -2f64], vec![0f64, 1f64]];
-        let expectedOutputMatrix = vec![vec![6f64, -4f64], vec![4f64, -7f64]];
-        let result = multiply_matrix_by_matrix(&matrixA, &matrixB);
-        assert_matrix_f64_eq(&expectedOutputMatrix, &result);
-    }
 }
